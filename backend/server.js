@@ -1,0 +1,26 @@
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import mongoose from 'mongoose';
+import authRoutes from './routes/auth.js';
+import studentRoutes from './routes/students.js';
+import teacherRoutes from './routes/teachers.js';
+import classRoutes from './routes/classes.js';
+import attendanceRoutes from './routes/attendance.js';
+import noticeRoutes from './routes/notices.js';
+import { protect } from './middleware/auth.js';
+
+const app = express();
+app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:5173' }));
+app.use(express.json());
+app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+app.use('/api/auth', authRoutes);
+app.use('/api/students', protect, studentRoutes);
+app.use('/api/teachers', protect, teacherRoutes);
+app.use('/api/classes', protect, classRoutes);
+app.use('/api/attendance', attendanceRoutes);
+app.use('/api/notices', noticeRoutes);
+app.get('/api/dashboard', protect, async (req, res, next) => { try { const [Student, Teacher, SchoolClass, Attendance] = await Promise.all([import('./models/Student.js'), import('./models/Teacher.js'), import('./models/SchoolClass.js'), import('./models/Attendance.js')]); const [students, teachers, classes, todayAttendance] = await Promise.all([Student.default.countDocuments(), Teacher.default.countDocuments({ active: true }), SchoolClass.default.countDocuments(), Attendance.default.countDocuments({ date: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) } })]); res.json({ students, teachers, classes, todayAttendance }); } catch (error) { next(error); } });
+app.use((error, req, res, next) => { console.error(error); if (error.code === 11000) return res.status(409).json({ message: 'A record with these details already exists' }); if (error.name === 'CastError') return res.status(400).json({ message: 'Invalid record id' }); res.status(500).json({ message: 'Something went wrong on the server' }); });
+const port = process.env.PORT || 5000;
+mongoose.connect(process.env.MONGODB_URI).then(() => app.listen(port, () => console.log(`API running on port ${port}`))).catch((error) => { console.error('MongoDB connection failed:', error.message); process.exit(1); });
